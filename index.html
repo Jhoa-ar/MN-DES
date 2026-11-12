@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GCP en Finanzas · Cartera de inversión</title>
+  <meta name="description" content="Método de Gradientes Conjugados Precondicionado aplicado a una cartera de inversión: tres escenarios, errores, condicionamiento y pruebas QA." />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#inicio">GCP · Finanzas</a>
+    <nav id="nav" aria-label="Secciones">
+      <a href="#inicio">1 Inicio</a>
+      <a href="#caso">2 Caso</a>
+      <a href="#formulacion">3 Formulación</a>
+      <a href="#entrada">4 Entrada</a>
+      <a href="#escenarios">5 Escenarios</a>
+      <a href="#referencia">6 Referencia</a>
+      <a href="#gcp">7 GCP vs GC</a>
+      <a href="#errores">8 Errores</a>
+      <a href="#qa">9 QA</a>
+      <a href="#conclusiones">10 Conclusiones</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- 1. INICIO -->
+    <section id="inicio" class="hero">
+      <p class="eyebrow" id="h-uni">Universidad Mayor de San Andrés · Carrera de Informática</p>
+      <h1>Método de Gradientes Conjugados Precondicionado en la optimización de una cartera de inversión</h1>
+      <p class="lead">Se modela una cartera media-varianza de 6 activos como un sistema lineal simétrico y definido positivo <code>Ax = b</code> y se resuelve con GCP en tres escenarios: ideal, bajo estrés financiero y mal condicionado.</p>
+      <dl class="meta" id="h-meta"></dl>
+      <div class="chips"><span class="chip">n = 6 variables</span><span class="chip">Tolerancia 10⁻⁶</span><span class="chip">Referencia: Cholesky / LU</span><span class="chip">Precondicionadores: Jacobi · SSOR · IC(0)</span></div>
+    </section>
+
+    <!-- 2. CASO DE ESTUDIO -->
+    <section id="caso">
+      <h2><span class="num">2</span> Caso de estudio</h2>
+      <p>Un inversionista debe repartir su capital entre seis clases de activos. Siguiendo el modelo de media-varianza de Markowitz, maximiza el rendimiento esperado penalizando el riesgo:</p>
+      <p class="eq">máx<sub>x</sub> &nbsp; μᵀx − (γ/2)·xᵀΣx &nbsp; ⟹ &nbsp; <b>Σ x = μ/γ</b> &nbsp; ⟹ &nbsp; <b>A x = b</b>, con A = Σ y b = μ/γ.</p>
+      <ul>
+        <li><b>Por qué A es simétrica y definida positiva:</b> es una matriz de covarianzas, simétrica por definición (Cov(i,j) = Cov(j,i)); es definida positiva porque la varianza de toda cartera no nula, xᵀΣx, es estrictamente positiva (ningún activo es combinación libre de riesgo de los demás).</li>
+        <li><b>Por qué conviene un método iterativo:</b> con muchos activos, Σ es grande y se estima con ruido; los métodos de gradientes conjugados solo requieren productos matriz-vector y el precondicionamiento corrige el mal escalamiento entre activos de volatilidad muy distinta.</li>
+        <li><b>Estructura de covarianza (modelo de un índice):</b> A<sub>ii</sub> = σ<sub>i</sub>², A<sub>ij</sub> = (σ<sub>i</sub>β<sub>i</sub>)(σ<sub>j</sub>β<sub>j</sub>), con 0 &lt; β<sub>i</sub> &lt; 1. Equivale a correlaciones ρ<sub>ij</sub> = β<sub>i</sub>β<sub>j</sub>. Esto garantiza A simétrica y definida positiva por construcción, y permite justificar financieramente cada escenario cambiando σ, β, μ y γ.</li>
+      </ul>
+      <div class="note"><b>Procedencia de los datos.</b> Las volatilidades, correlaciones y rendimientos en exceso son <b>valores ilustrativos</b> calibrados a órdenes de magnitud habituales de cada clase de activo (renta fija ≈ 8 %, acciones ≈ 10–15 % anual). No provienen de una serie histórica real. Para el desafío el objetivo es numérico: que la estructura del modelo sea coherente y que los tres escenarios tengan una justificación financiera clara. <span id="datasrc"></span></div>
+    </section>
+
+    <!-- 3. FORMULACIÓN -->
+    <section id="formulacion">
+      <h2><span class="num">3</span> Formulación</h2>
+      <h3>Variables</h3>
+      <div class="tablewrap"><table id="t-vars"></table></div>
+      <h3>Sistema lineal A x = b <small class="muted" id="f-scn"></small></h3>
+      <div id="f-system" class="tablewrap"></div>
+      <h3>Interpretación de los coeficientes</h3>
+      <ul>
+        <li><b>a<sub>ii</sub></b> = σ<sub>i</sub>²: varianza anual del activo i (riesgo propio).</li>
+        <li><b>a<sub>ij</sub></b> (i ≠ j) = Cov(i, j): riesgo compartido; si es grande, los activos se mueven juntos y diversifican poco.</li>
+        <li><b>b<sub>i</sub></b> = μ<sub>i</sub>/γ: rendimiento esperado en exceso del activo i, atenuado por la aversión al riesgo γ del inversionista.</li>
+        <li><b>x<sub>i</sub></b> = fracción del capital en el activo i (negativa = venta en corto).</li>
+      </ul>
+      <h3>Verificación de simetría y definición positiva</h3>
+      <p class="muted">Se verifica en tiempo real para la matriz que esté cargada (y se repite para los tres escenarios en el módulo QA): simetría A = Aᵀ, criterio de Sylvester (menores principales líderes) y autovalores.</p>
+      <div id="f-valid"></div>
+    </section>
+
+    <!-- 4. ENTRADA DE DATOS -->
+    <section id="entrada">
+      <h2><span class="num">4</span> Entrada de datos</h2>
+      <p>Edita cualquier coeficiente: todo se recalcula al instante. Acepta notación científica (<code>1e-4</code>) y coma o punto decimal.</p>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+      <div class="grid2">
+        <div>
+          <h3>Matriz A (covarianzas)</h3>
+          <div class="tablewrap"><table id="in-A" class="inputs"></table></div>
+          <label class="check"><input type="checkbox" id="mirror" checked /> Mantener A simétrica al editar (refleja aᵢⱼ en aⱼᵢ)</label>
+          <p class="muted small">Desmarca esta opción para introducir deliberadamente una matriz no simétrica y ver cómo la validación la rechaza.</p>
+        </div>
+        <div>
+          <h3>Vector b (μ/γ)</h3>
+          <div class="tablewrap"><table id="in-b" class="inputs"></table></div>
+          <h3>Vector inicial x₀</h3>
+          <div class="tablewrap"><table id="in-x0" class="inputs"></table></div>
+        </div>
+      </div>
+      <div class="controls">
+        <label>Tolerancia <input id="in-tol" class="num-in" value="1e-6" /></label>
+        <label>Máx. iteraciones <input id="in-max" class="num-in" value="200" /></label>
+        <label>Precondicionador
+          <select id="in-pre">
+            <option value="jacobi">Jacobi (diagonal)</option>
+            <option value="ssor">SSOR</option>
+            <option value="ic0">Cholesky incompleto IC(0)</option>
+            <option value="none">Ninguno</option>
+          </select>
+        </label>
+        <label id="lbl-omega">ω (SSOR) <input id="in-omega" class="num-in" value="1" /></label>
+        <button id="btn-reset" class="btn secondary" type="button">Restablecer escenario</button>
+        <button id="btn-run" class="btn" type="button">Recalcular</button>
+      </div>
+    </section>
+
+    <!-- 5. ESCENARIOS -->
+    <section id="escenarios">
+      <h2><span class="num">5</span> Tres escenarios</h2>
+      <p>Los tres escenarios comparten las mismas seis variables y la misma estructura del modelo; solo cambian σ, β, μ y γ de forma fundamentada.</p>
+      <div id="scn-cards" class="cards"></div>
+      <div id="scn-params" class="tablewrap"></div>
+    </section>
+
+    <!-- 6. REFERENCIA -->
+    <section id="referencia">
+      <h2><span class="num">6</span> Solución numérica de referencia (método directo)</h2>
+      <p>Se resuelve con <b>factorización de Cholesky</b> A = L·Lᵀ (sustitución hacia adelante y hacia atrás). Como contraste independiente se resuelve también con eliminación de Gauss / LU con pivoteo parcial. Por tratarse de un método directo, se considera la <b>solución numérica de referencia</b> (podrá clasificarse como solución exacta salvo errores de redondeo).</p>
+      <div id="r-body"></div>
+    </section>
+
+    <!-- 7. GCP vs GC -->
+    <section id="gcp">
+      <h2><span class="num">7</span> Gradientes Conjugados Precondicionado vs. Gradientes Conjugados simple</h2>
+      <p>Algoritmo de Suñagua (2020): <code>r₀ = b − Ax₀</code>; resolver <code>M z_k = r_k</code>; <code>p₀ = z₀</code>; <code>α_k = r_kᵀz_k / p_kᵀAp_k</code>; <code>x_{k+1} = x_k + α_k p_k</code>; <code>r_{k+1} = r_k − α_k A p_k</code>; <code>β_k = r_{k+1}ᵀz_{k+1} / r_kᵀz_k</code>; <code>p_{k+1} = z_{k+1} + β_k p_k</code>. Parada: <code>‖r_k‖₂/‖b‖₂ &lt; tol</code> o k = N<sub>máx</sub>. El GC simple (M = I) se ejecuta en paralelo solo como contraste.</p>
+      <div id="g-body"></div>
+    </section>
+
+    <!-- 8. ERRORES -->
+    <section id="errores">
+      <h2><span class="num">8</span> Análisis de errores y condicionamiento</h2>
+      <div id="e-body"></div>
+      <h3 id="comparativa">Tabla comparativa de los tres escenarios</h3>
+      <p class="muted">Se ejecutan los tres escenarios con sus datos originales, tolerancia 10⁻⁶ y el precondicionador Jacobi (independiente de lo que hayas editado arriba).</p>
+      <div id="c-body" class="tablewrap"></div>
+    </section>
+
+    <!-- 9. QA -->
+    <section id="qa">
+      <h2><span class="num">9</span> Módulo de pruebas (QA)</h2>
+      <p>Las pruebas se ejecutan de verdad sobre esta misma página (cargan escenarios, editan celdas, introducen matrices inválidas) y al terminar restauran tu estado. También se pueden ejecutar en consola con <code>npm test</code>.</p>
+      <p><button id="btn-qa" class="btn" type="button">Ejecutar todas las pruebas</button> <span id="qa-sum" class="muted"></span></p>
+      <div class="tablewrap"><table id="qa-table" class="qa"></table></div>
+    </section>
+
+    <!-- 10. CONCLUSIONES -->
+    <section id="conclusiones">
+      <h2><span class="num">10</span> Conclusiones y referencias</h2>
+      <div id="k-body"></div>
+      <h3>Referencias</h3>
+      <ul class="refs">
+        <li>Suñagua S., P. (2020). <i>Método de Gradientes Conjugados Precondicionado</i>. Revista Boliviana de Matemática – UMSA, 04, 2–7.</li>
+        <li>Golub, G. H., &amp; Van Loan, C. F. (2013). <i>Matrix Computations</i> (4.ª ed.). Johns Hopkins University Press.</li>
+        <li>Saad, Y. (2003). <i>Iterative Methods for Sparse Linear Systems</i> (2.ª ed.). SIAM.</li>
+        <li>Markowitz, H. (1952). Portfolio Selection. <i>The Journal of Finance</i>, 7(1), 77–91.</li>
+        <li><b>Datos:</b> parámetros ilustrativos definidos en <code>js/scenarios.js</code> (ver Sección 2).</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer><span id="foot"></span></footer>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

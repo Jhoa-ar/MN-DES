@@ -1,0 +1,12 @@
+{
+  "name": "gcp-finanzas",
+  "version": "1.0.0",
+  "description": "Gradientes Conjugados Precondicionado aplicado a una cartera de inversión (UMSA - Métodos Numéricos)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node tests/run.mjs",
+    "start": "python3 -m http.server 8080"
+  },
+  "license": "MIT"
+}
